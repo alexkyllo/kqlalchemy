@@ -1,2 +1,3 @@
-# kusto-alchemy
+# KQLAlchemy
+
 (WIP) SQLAlchemy dialect for Kusto
