@@ -1,11 +1,8 @@
 import struct
-import warnings
 
 import pandas as pd
 from azure.identity import AzureCliCredential
 from sqlalchemy import create_engine, event
-
-# %%
 from sqlalchemy.dialects import registry
 from sqlalchemy.engine import URL
 from sqlalchemy.orm import Session
@@ -38,6 +35,14 @@ def get_engine(server: str, database: str, *args, **kwargs):
         cparams["attrs_before"] = {SQL_COPT_SS_ACCESS_TOKEN: token_struct}
 
     return engine
+
+
+def kusto_table(engine, table_name):
+    """"""
+    metadata = MetaData()
+    metadata.reflect(only=[table_name], bind=engine)
+    tbl = Table(table_name, metadata)
+    return tbl
 
 
 def to_df(query, engine):
