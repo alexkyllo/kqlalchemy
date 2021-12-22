@@ -1,17 +1,23 @@
 import struct
 
 import pandas as pd
-from azure.identity import AzureCliCredential
 from sqlalchemy import create_engine, event
 from sqlalchemy.dialects import registry
 from sqlalchemy.engine import URL
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import MetaData, Table
 
-registry.register("mskql.pyodbc", "qjm.pyodbc", "KQLDialect_pyodbc")
+registry.register("mskql.pyodbc", "kqlalchemy.pyodbc", "KQLDialect_pyodbc")
 
+def get_token(azure_credentials):
+    """Use a credential to get a """
+    TOKEN_URL = "https://kusto.kusto.windows.net/"
+    raw_token = azure_credentials.get_token(TOKEN_URL).token.encode("utf-16-le")
+    token_struct = struct.pack(f"<I{len(raw_token)}s", len(raw_token), raw_token)
+    SQL_COPT_SS_ACCESS_TOKEN = 1256
+    return {SQL_COPT_SS_ACCESS_TOKEN: token_struct}
 
-def get_engine(server: str, database: str, *args, **kwargs):
+def get_engine(server: str, database: str, azure_credentials, *args, **kwargs):
     """Get a SQLAlchemy Engine for Kusto over ODBC."""
     conn_str = f"Driver={{ODBC Driver 17 for SQL Server}};Server={server}.kusto.windows.net;Database={database}"
     connection_url = URL.create(
@@ -23,21 +29,13 @@ def get_engine(server: str, database: str, *args, **kwargs):
     def provide_token(dialect, conn_rec, cargs, cparams):
         # remove the "Trusted_Connection" parameter that SQLAlchemy adds
         cargs[0] = cargs[0].replace(";Trusted_Connection=Yes", "")
-
-        # create token credential
-        azure_credentials = AzureCliCredential()
-        TOKEN_URL = "https://kusto.kusto.windows.net/"
-        SQL_COPT_SS_ACCESS_TOKEN = 1256
-        raw_token = azure_credentials.get_token(TOKEN_URL).token.encode("utf-16-le")
-        token_struct = struct.pack(f"<I{len(raw_token)}s", len(raw_token), raw_token)
-
         # apply it to keyword arguments
-        cparams["attrs_before"] = {SQL_COPT_SS_ACCESS_TOKEN: token_struct}
+        cparams["attrs_before"] = get_token(azure_credentials)
 
     return engine
 
 
-def kusto_table(engine, table_name):
+def kusto_table(table_name, engine):
     """"""
     metadata = MetaData()
     metadata.reflect(only=[table_name], bind=engine)
@@ -45,7 +43,7 @@ def kusto_table(engine, table_name):
     return tbl
 
 
-def to_df(query, engine):
+def to_pandas(query, engine):
     """"""
     with Session(engine, autocommit=True) as session:
         df = pd.read_sql(
