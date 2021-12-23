@@ -1,3 +1,4 @@
+"""KQL Dialect base module."""
 from sqlalchemy import sql, util
 from sqlalchemy.dialects.mssql import information_schema as ischema
 from sqlalchemy.dialects.mssql.base import (

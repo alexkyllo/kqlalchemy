@@ -1,3 +1,4 @@
+"""KQL Dialect ODBC driver module."""
 import datetime
 import decimal
 import re

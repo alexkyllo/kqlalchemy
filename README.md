@@ -46,7 +46,16 @@ from azure.identity import AzureCliCredential
 engine = get_engine("help", "Samples", AzureCliCredential())
 storm_events = kusto_table("StormEvents", engine) # performs reflection
 query = storm_events.select().limit(10)
-df = to_pandas(query, engine)
+df = to_pandas(query, engine) # returns a Pandas DataFrame with query results.
+print(df[["StartTime", "EventType", "State", "DamageProperty"]].head(5))
+```
+```
+           StartTime          EventType           State  DamageProperty
+0 2007-09-29 08:11:00         Waterspout  ATLANTIC SOUTH               0
+1 2007-09-18 20:00:00         Heavy Rain         FLORIDA               0
+2 2007-09-20 21:57:00            Tornado         FLORIDA         6200000
+3 2007-12-30 16:00:00  Thunderstorm Wind         GEORGIA            2000
+4 2007-12-20 07:50:00  Thunderstorm Wind     MISSISSIPPI           20000
 ```
 
 ## TODO

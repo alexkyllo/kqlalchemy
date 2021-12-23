@@ -1,3 +1,6 @@
+"""KQLAlchemy
+A SQLAlchemy dialect for Azure Data Explorer (Kusto).
+"""
 import struct
 
 import pandas as pd
