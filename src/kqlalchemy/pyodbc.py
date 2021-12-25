@@ -19,7 +19,7 @@ from sqlalchemy.dialects.mssql.pyodbc import (
     _VARBINARY_pyodbc,
 )
 
-from kqlalchemy.base import KQLDialect
+from kqlalchemy.kql_dialect import KQLDialect
 
 
 class KQLDialect_pyodbc(PyODBCConnector, KQLDialect):
