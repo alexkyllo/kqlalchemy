@@ -17,6 +17,7 @@ from sqlalchemy.dialects.mssql.base import (
     MSText,
     MSVarBinary,
     _db_plus_owner,
+    _db_plus_owner_listing,
 )
 from sqlalchemy.engine import URL, Engine
 from sqlalchemy.engine.reflection import cache
@@ -52,10 +53,6 @@ def get_engine(server: str, database: str, azure_credentials, *args, **kwargs):
         # remove the "Trusted_Connection" parameter that SQLAlchemy adds
         cargs[0] = cargs[0].replace(";Trusted_Connection=Yes", "")
         # apply it to keyword arguments
-        dialect.server = server
-        dialect.database = database
-        dialect.credentials = azure_credentials
-        dialect.token = _get_token(azure_credentials)
         cparams["attrs_before"] = _encode_token(dialect.token)
 
     return engine
@@ -84,7 +81,8 @@ def _parse_connection_str(conn_str):
     url_split_db = url.split(";Database=")
     database = url_split_db[1]
     server = url_split_db[0].split(";Server=")[1]
-    return f"{server}/{database}"
+    server = f"https://{server}"
+    return server, database
 
 
 class KQLDialect(MSDialect):
@@ -127,17 +125,19 @@ class KQLDialect(MSDialect):
     construct_arguments = parent.construct_arguments
 
     def __init__(self, azure_credential, *args, **kwargs) -> None:
-        self.credential = azure_credential
-        self.kusto_client = None
+        self._kusto_client = None
+        self._server = None
+        self._database = None
 
         @event.listens_for(Engine, "do_connect")
         def provide_token(dialect, conn_rec, cargs, cparams):
             # remove the "Trusted_Connection" parameter that SQLAlchemy adds
             cargs[0] = cargs[0].replace(";Trusted_Connection=Yes", "")
             token = _get_token(azure_credential)
-            url = _parse_connection_str(cargs[0])
+            self._server, self._database = _parse_connection_str(cargs[0])
+            url = self._server
             kcsb = KustoConnectionStringBuilder.with_token_provider(url, lambda: token)
-            self.kusto_client = KustoClient(kcsb)
+            self._kusto_client = KustoClient(kcsb)
             cparams["attrs_before"] = _encode_token(token)
 
         super().__init__(*args, **kwargs)
@@ -162,8 +162,68 @@ class KQLDialect(MSDialect):
 
     @cache
     @_db_plus_owner
+    def _get_columns(self, connection, tablename, dbname, owner, schema, **kw):
+        """"""
+        type_map = {
+            "DateTime": "datetime2",
+            "I32": "int",
+            "I64": "bigint",
+            "StringBuffer": "nvarchar",
+            "R64": "real",
+        }
+        res = self._kusto_client.execute_mgmt(dbname, f".show table {tablename}").primary_results[0]
+        cols = []
+        for row in res.rows:
+            name = row["AttributeName"]
+            type_ = type_map.get(row["AttributeType"])
+            coltype = self.ischema_names.get(type_, None)
+            collation = "SQL_Latin1_General_CP1_CS_AS" if type_ == "nvarchar" else None
+            numericprec = 53 if type_ == "real" else None
+            numericscale = None  # TODO: look up Kusto decimal scale
+            kwargs = {}
+            if coltype in (
+                MSString,
+                MSChar,
+                MSNVarchar,
+                MSNChar,
+                MSText,
+                MSNText,
+                MSBinary,
+                MSVarBinary,
+                sqltypes.LargeBinary,
+            ):
+                kwargs["length"] = None
+                if collation:
+                    kwargs["collation"] = collation
+
+            if coltype is None:
+                util.warn("Did not recognize type '%s' of column '%s'" % (type_, name))
+                coltype = sqltypes.NULLTYPE
+            else:
+                if issubclass(coltype, sqltypes.Numeric):
+                    kwargs["precision"] = numericprec
+
+                    if not issubclass(coltype, sqltypes.Float):
+                        kwargs["scale"] = numericscale
+
+                coltype = coltype(**kwargs)
+            cdict = {
+                "name": name,
+                "type": coltype,
+                "nullable": True,
+                "default": None,
+                "autoincrement": False,
+            }
+
+            cols.append(cdict)
+
+        return cols
+
+    @cache
+    @_db_plus_owner
     def get_columns(self, connection, tablename, dbname, owner, schema, **kw):
         """"""
+        # TODO: rewrite with a KQL query and datatype name map
         columns = ischema.columns
         whereclause = columns.c.table_name == tablename
         s = (
@@ -227,23 +287,36 @@ class KQLDialect(MSDialect):
 
         return cols
 
+    @cache
+    @_db_plus_owner_listing
+    def get_table_names(self, connection, dbname, owner, schema):
+        res = self._kusto_client.execute_mgmt(
+            dbname, f".show tables | project TableName"
+        ).primary_results[0]
+        return [n[0] for n in res.rows]
+
     @_db_plus_owner
     def has_table(self, connection, tablename, dbname, owner, schema):
-        self._ensure_has_table_connection(connection)
-        tables = ischema.tables
-        s = sql.select(tables.c.table_name).where(
-            sql.and_(
-                sql.or_(
-                    tables.c.table_type == "BASE TABLE",
-                    tables.c.table_type == "VIEW",
-                ),
-                tables.c.table_name == tablename,
-            )
+        res = self._kusto_client.execute_mgmt(
+            dbname, f".show tables | where TableName == '{tablename}'"
         )
+        tbls = res.primary_results[0]
+        return len(tbls) > 0
+        # self._ensure_has_table_connection(connection)
+        # tables = ischema.tables
+        # s = sql.select(tables.c.table_name).where(
+        #     sql.and_(
+        #         sql.or_(
+        #             tables.c.table_type == "BASE TABLE",
+        #             tables.c.table_type == "VIEW",
+        #         ),
+        #         tables.c.table_name == tablename,
+        #     )
+        # )
 
-        if owner:
-            s = s.where(tables.c.table_schema == owner)
+        # if owner:
+        #     s = s.where(tables.c.table_schema == owner)
 
-        c = connection.execute(s)
+        # c = connection.execute(s)
 
-        return c.first() is not None
+        # return c.first() is not None
