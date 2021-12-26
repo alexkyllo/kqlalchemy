@@ -18,21 +18,21 @@ from sqlalchemy.dialects.mssql.base import (
     MSVarBinary,
     _db_plus_owner,
 )
-from sqlalchemy.engine import URL
+from sqlalchemy.engine import URL, Engine
 from sqlalchemy.engine.reflection import cache
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import MetaData, Table
 from sqlalchemy.sql import sqltypes
 
 
-def get_token(azure_credentials):
+def _get_token(azure_credentials):
     """Use a credential to get a"""
     TOKEN_URL = "https://kusto.kusto.windows.net/"
     token = azure_credentials.get_token(TOKEN_URL).token
     return token
 
 
-def encode_token(token):
+def _encode_token(token):
     raw_token = token.encode("utf-16-le")
     token_struct = struct.pack(f"<I{len(raw_token)}s", len(raw_token), raw_token)
     SQL_COPT_SS_ACCESS_TOKEN = 1256
@@ -52,8 +52,11 @@ def get_engine(server: str, database: str, azure_credentials, *args, **kwargs):
         # remove the "Trusted_Connection" parameter that SQLAlchemy adds
         cargs[0] = cargs[0].replace(";Trusted_Connection=Yes", "")
         # apply it to keyword arguments
-        dialect.token = get_token(azure_credentials)
-        cparams["attrs_before"] = encode_token(dialect.token)
+        dialect.server = server
+        dialect.database = database
+        dialect.credentials = azure_credentials
+        dialect.token = _get_token(azure_credentials)
+        cparams["attrs_before"] = _encode_token(dialect.token)
 
     return engine
 
@@ -74,6 +77,14 @@ def to_pandas(query, engine):
             session.bind,
         )
         return df
+
+
+def _parse_connection_str(conn_str):
+    url = unquote(str(conn_str))
+    url_split_db = url.split(";Database=")
+    database = url_split_db[1]
+    server = url_split_db[0].split(";Server=")[1]
+    return f"{server}/{database}"
 
 
 class KQLDialect(MSDialect):
@@ -115,6 +126,22 @@ class KQLDialect(MSDialect):
 
     construct_arguments = parent.construct_arguments
 
+    def __init__(self, azure_credential, *args, **kwargs) -> None:
+        self.credential = azure_credential
+        self.kusto_client = None
+
+        @event.listens_for(Engine, "do_connect")
+        def provide_token(dialect, conn_rec, cargs, cparams):
+            # remove the "Trusted_Connection" parameter that SQLAlchemy adds
+            cargs[0] = cargs[0].replace(";Trusted_Connection=Yes", "")
+            token = _get_token(azure_credential)
+            url = _parse_connection_str(cargs[0])
+            kcsb = KustoConnectionStringBuilder.with_token_provider(url, lambda: token)
+            self.kusto_client = KustoClient(kcsb)
+            cparams["attrs_before"] = _encode_token(token)
+
+        super().__init__(*args, **kwargs)
+
     def get_isolation_level(self, dbapi_connection):
         return "READ COMMITTED"
 
@@ -137,12 +164,6 @@ class KQLDialect(MSDialect):
     @_db_plus_owner
     def get_columns(self, connection, tablename, dbname, owner, schema, **kw):
         """"""
-        url = connection.engine.url.query["odbc_connect"]
-        url = unquote(str(url))
-        url_split_db = url.split(";Database=")
-        database = url_split_db[1]
-        server = url_split_db[0].split(";Server=")[1]
-
         columns = ischema.columns
         whereclause = columns.c.table_name == tablename
         s = (
