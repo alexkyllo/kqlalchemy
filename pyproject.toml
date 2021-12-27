@@ -1,6 +1,6 @@
 [project]
 name = "kqlalchemy"
-version = "0.1.0"
+dynamic = ["version"]
 description = ""
 authors = [
     {name = "Alex Kyllo", email = "alex.kyllo@gmail.com"},
@@ -21,6 +21,7 @@ homepage = ""
 [tool.isort]
 profile = "black"
 [tool.pdm]
+version = {from = "src/kqlalchemy/__init__.py"}
 [tool.pdm.dev-dependencies]
 dev = [
     "sphinx",
