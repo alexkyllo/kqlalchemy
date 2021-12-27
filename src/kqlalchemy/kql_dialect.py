@@ -19,7 +19,6 @@ from sqlalchemy.dialects.mssql.base import (
 )
 from sqlalchemy.engine import URL, Engine
 from sqlalchemy.engine.reflection import cache
-from sqlalchemy.orm import Session
 from sqlalchemy.schema import MetaData, Table
 from sqlalchemy.sql import sqltypes
 
