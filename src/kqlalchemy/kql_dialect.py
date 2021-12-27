@@ -2,7 +2,6 @@
 import struct
 from urllib.parse import unquote
 
-import pandas as pd
 from azure.kusto.data import KustoClient, KustoConnectionStringBuilder
 from sqlalchemy import create_engine, event, util
 from sqlalchemy.dialects.mssql.base import (
@@ -70,26 +69,6 @@ def kusto_table(table_name, engine):
     metadata.reflect(only=[table_name], bind=engine)
     tbl = Table(table_name, metadata)
     return tbl
-
-
-def to_pandas(query, engine):
-    """Execute a query on the given engine and return the result set as a pandas DataFrame.
-
-    Parameters
-    ----------
-    query: A SQLAlchemy statement.
-    engine: A SQLAlchemy Engine instance.
-
-    Returns
-    -------
-    pd.DataFrame The results of the query.
-    """
-    with Session(engine, autocommit=True) as session:
-        df = pd.read_sql(
-            query.compile(engine, compile_kwargs={"literal_binds": True}),
-            session.bind,
-        )
-        return df
 
 
 def _parse_connection_str(conn_str):

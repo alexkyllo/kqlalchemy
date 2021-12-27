@@ -8,10 +8,8 @@ authors = [
 dependencies = [
     "sqlalchemy~=1.4",
     "azure-identity",
-    "pandas",
     "pyodbc",
-    "azure-kusto-data>=2.3.2",
-]
+    "azure-kusto-data>=2.3.2"]
 requires-python = ">=3.7.1"
 license = {text = "MIT"}
 
