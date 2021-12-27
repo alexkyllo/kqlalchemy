@@ -20,6 +20,8 @@ homepage = ""
 
 [project.optional-dependencies]
 [tool]
+[tool.isort]
+profile = "black"
 [tool.pdm]
 [tool.pdm.dev-dependencies]
 dev = [
