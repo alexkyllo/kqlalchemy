@@ -66,7 +66,7 @@ Or, use the helper function `kusto_engine` to get an `Engine` instance:
 ```python
 from azure.identity import AzureCliCredential
 # Importing kqlalchemy loads the dialect plugin.
-from kqlalchemy import kusto_engine, kusto_table, to_pandas
+from kqlalchemy import kusto_engine, kusto_table
 import pandas as pd
 from sqlalchemy.orm import Session
 
